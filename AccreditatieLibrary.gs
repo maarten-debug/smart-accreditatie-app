@@ -2,7 +2,8 @@
  * Haalt BOD contacten op uit de Contactpersonen sheet.
  */
 function getBODContacts(ss) {
-  var contactSheet = ss.getSheetByName('Contactpersonen');
+  var contactSheet = ss.getSheetByName('Contactpersonen BOD');
+  if (!contactSheet) contactSheet = ss.getSheetByName('Contactpersonen');
   if (!contactSheet) return {};
   
   var data = contactSheet.getDataRange().getValues();
@@ -25,7 +26,8 @@ function getBODContacts(ss) {
  * Haalt een lijst met alle BOD emails op uit de Contactpersonen sheet.
  */
 function getBODEmails(ss) {
-  var contactSheet = ss.getSheetByName('Contactpersonen');
+  var contactSheet = ss.getSheetByName('Contactpersonen BOD');
+  if (!contactSheet) contactSheet = ss.getSheetByName('Contactpersonen');
   if (!contactSheet) return [];
   
   var data = contactSheet.getDataRange().getValues();
