@@ -1,32 +1,43 @@
 /**
- * Haalt BOD contacten op uit de Configuratie sheet.
+ * Haalt BOD contacten op uit de Contactpersonen sheet.
  */
-function getBODContacts(configSheet) {
-  var data = configSheet.getDataRange().getValues();
+function getBODContacts(ss) {
+  var contactSheet = ss.getSheetByName('Contactpersonen');
+  if (!contactSheet) return {};
+  
+  var data = contactSheet.getDataRange().getValues();
   var contacts = {};
-  var startRow = -1;
   
-  for (var i = 0; i < data.length; i++) {
-    var key = data[i][0] ? data[i][0].toString().trim() : '';
-    if (key === 'Contactpersonen BOD' || key === 'Contactpersoon BOD') {
-      startRow = i + 1; // start from the next row
-      break;
-    }
-  }
-  
-  if (startRow !== -1) {
-    for (var j = startRow; j < data.length; j++) {
-      var afk = data[j][0] ? data[j][0].toString().trim() : '';
-      if (afk) {
-        contacts[afk] = {
-          naam: data[j][1] ? data[j][1].toString().trim() : '',
-          email: data[j][2] ? data[j][2].toString().trim() : '',
-          mobiel: data[j][3] ? data[j][3].toString().trim() : ''
-        };
-      }
+  for (var i = 1; i < data.length; i++) {
+    var afk = data[i][0] ? data[i][0].toString().trim() : '';
+    if (afk) {
+      contacts[afk] = {
+        naam: data[i][1] ? data[i][1].toString().trim() : '',
+        email: data[i][2] ? data[i][2].toString().trim() : '',
+        mobiel: data[i][3] ? data[i][3].toString().trim() : ''
+      };
     }
   }
   return contacts;
+}
+
+/**
+ * Haalt een lijst met alle BOD emails op uit de Contactpersonen sheet.
+ */
+function getBODEmails(ss) {
+  var contactSheet = ss.getSheetByName('Contactpersonen');
+  if (!contactSheet) return [];
+  
+  var data = contactSheet.getDataRange().getValues();
+  var emails = [];
+  
+  for (var i = 1; i < data.length; i++) {
+    var email = data[i][2] ? data[i][2].toString().trim() : '';
+    if (email && email.indexOf('@') !== -1) {
+      emails.push(email);
+    }
+  }
+  return emails;
 }
 
 /**
@@ -41,8 +52,6 @@ function getConfiguratie(ss) {
   for (var i = 0; i < configData.length; i++) {
     var key = configData[i][0] ? configData[i][0].toString().trim() : '';
     var value = configData[i][1] ? configData[i][1].toString().trim() : '';
-    // We stoppen met het inlezen van de platte config als we de contacten-tabel bereiken
-    if (key === 'Contactpersonen BOD' || key === 'Contactpersoon BOD') break;
     
     if (key) {
       config[key] = value;
@@ -184,6 +193,18 @@ function _processAccreditatie(alleenGeselecteerd, optSs) {
       var newSsId = newFile.getId();
       var newSs = SpreadsheetApp.openById(newSsId);
       
+      // Verfijn bladbeveiliging vanuit template (als aanwezig)
+      var bodEmails = getBODEmails(ss);
+      var allProtections = newSs.getProtections(SpreadsheetApp.ProtectionType.SHEET).concat(newSs.getProtections(SpreadsheetApp.ProtectionType.RANGE));
+      
+      for (var p = 0; p < allProtections.length; p++) {
+        var protection = allProtections[p];
+        protection.removeEditors(protection.getEditors());
+        if (bodEmails.length > 0) {
+          protection.addEditors(bodEmails);
+        }
+      }
+      
       // 5. Dynamische Kolommen (Merge Tags)
       var newSheets = newSs.getSheets();
       
@@ -263,7 +284,6 @@ function mailAccreditatieProces(alleenGeselecteerd, optSs) {
   }
   
   var config = configObj.config;
-  var configSheet = configObj.sheet;
   
   var formatEmail = config['Format Email'];
   var outputKolomSend = config['Output Kolom Send'];
@@ -275,7 +295,7 @@ function mailAccreditatieProces(alleenGeselecteerd, optSs) {
     return;
   }
   
-  var bodContacts = getBODContacts(configSheet);
+  var bodContacts = getBODContacts(ss);
   var tabbladen = tabbladenString.split(',').map(function(s) { return s.trim(); });
   var totalProcessed = 0;
   
