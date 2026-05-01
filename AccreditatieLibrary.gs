@@ -388,7 +388,7 @@ function mailAccreditatieProces(alleenGeselecteerd, optSs) {
         
       // Button 2: Mobile (Link to Web App)
       if (webAppUrl && ssId) {
-        var mobileUrl = webAppUrl + '?id=' + ssId;
+        var mobileUrl = webAppUrl + '?sid=' + ssId;
         buttonHtml += '<br><a href="' + mobileUrl + '" style="' +
           'background-color: ' + primaryColor + '; ' +
           'color: white; ' +
@@ -454,7 +454,7 @@ function mailAccreditatieProces(alleenGeselecteerd, optSs) {
  * Web App Entry Point
  */
 function doGet(e) {
-  var id = e.parameter.id;
+  var id = e.parameter.sid;
   if (!id) {
     return HtmlService.createHtmlOutput('<h3 style="color:red;font-family:sans-serif;text-align:center;margin-top:50px;">Fout: Geen ID opgegeven in URL.</h3>');
   }
