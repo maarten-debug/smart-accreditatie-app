@@ -362,20 +362,14 @@ function mailAccreditatieProces(alleenGeselecteerd, optSs) {
       bodyHtml = bodyHtml.replace(new RegExp('\\{\\{Email Contactpersoon BOD\\}\\}', 'gi'), bodDetails.email);
       bodyHtml = bodyHtml.replace(new RegExp('\\{\\{Mobiel Contactpersoon BOD\\}\\}', 'gi'), bodDetails.mobiel);
       
-      // Voeg één centrale knop toe voor de Google Spreadsheet
-      var primaryColor = config['Kleur Primair'] || config['kleur primair'] || '#1a73e8';
-      
-      var buttonHtml = '<br><br>';
-      
-      // Button: Direct link to Google Sheet
-      buttonHtml += '<a href="' + docUrl + '" style="' +
-        'background-color: ' + primaryColor + '; ' +
+      // Voeg enkele knop toe die DIRECT naar de Google Sheet gaat
+      var buttonHtml = '<br><br><a href="' + docUrl + '" style="' +
+        'background-color: #1a73e8; ' +
         'color: white; ' +
         'padding: 12px 24px; ' +
         'text-decoration: none; ' +
         'border-radius: 4px; ' +
         'display: inline-block; ' +
-        'margin-bottom: 20px; ' +
         'font-family: Arial, sans-serif; ' +
         'font-weight: bold;">' +
         'Open Accreditatiesheet ' + bNaam + '</a><br><br>';
