@@ -387,9 +387,8 @@ function mailAccreditatieProces(alleenGeselecteerd, optSs) {
         'Beste voor laptop: Bekijk Accreditatie ' + bNaam + '</a><br>';
         
       // Button 2: Mobile (Link to Web App)
-      if (webAppUrl && ssId) {
-        var longUrl = webAppUrl + '?sid=' + ssId;
-        var mobileUrl = getShortUrl(longUrl);
+      if (webAppUrl && bNaam) {
+        var mobileUrl = webAppUrl + '?bedrijf=' + encodeURIComponent(bNaam);
         buttonHtml += '<br><a href="' + mobileUrl + '" style="' +
           'background-color: ' + primaryColor + '; ' +
           'color: white; ' +
@@ -452,25 +451,75 @@ function mailAccreditatieProces(alleenGeselecteerd, optSs) {
 }
 
 /**
- * Helper voor URL shortener om Drive app te omzeilen
- */
-function getShortUrl(longUrl) {
-  try {
-    var response = UrlFetchApp.fetch('https://tinyurl.com/api-create.php?url=' + encodeURIComponent(longUrl));
-    return response.getContentText();
-  } catch (e) {
-    return longUrl; // Fallback naar lange URL als TinyURL faalt
-  }
-}
-
-/**
  * Web App Entry Point
  */
 function doGet(e) {
-  var id = e.parameter.sid;
-  if (!id) {
-    return HtmlService.createHtmlOutput('<h3 style="color:red;font-family:sans-serif;text-align:center;margin-top:50px;">Fout: Geen ID opgegeven in URL.</h3>');
+  var bedrijfsnaam = e.parameter.bedrijf;
+  if (!bedrijfsnaam) {
+    return HtmlService.createHtmlOutput('<h3 style="color:red;font-family:sans-serif;text-align:center;margin-top:50px;">Fout: Geen bedrijfsnaam opgegeven in URL.</h3>');
   }
+  
+  var activeSs = SpreadsheetApp.getActiveSpreadsheet();
+  if (!activeSs) {
+    return HtmlService.createHtmlOutput('<h3 style="color:red;font-family:sans-serif;text-align:center;margin-top:50px;">Fout: Kan hoofdspreadsheet niet openen. Zorg dat de Web App gekoppeld is aan de spreadsheet.</h3>');
+  }
+  
+  var accreditatieSheet = activeSs.getSheetByName('Accreditatie');
+  if (!accreditatieSheet) {
+    return HtmlService.createHtmlOutput('<h3 style="color:red;font-family:sans-serif;text-align:center;margin-top:50px;">Fout: Tabblad "Accreditatie" niet gevonden.</h3>');
+  }
+  
+  var configObj = getConfiguratie(activeSs);
+  if (!configObj) {
+    return HtmlService.createHtmlOutput('<h3 style="color:red;font-family:sans-serif;text-align:center;margin-top:50px;">Fout: Tabblad "Configuratie" niet gevonden.</h3>');
+  }
+  
+  var outputKolomNaam = configObj.config['Output Kolom'];
+  var lastRow = accreditatieSheet.getLastRow();
+  var lastCol = accreditatieSheet.getLastColumn();
+  
+  if (lastRow < 2 || lastCol < 1 || !outputKolomNaam) {
+    return HtmlService.createHtmlOutput('<h3 style="color:red;font-family:sans-serif;text-align:center;margin-top:50px;">Fout: Accreditatie tabblad is leeg of configuratie mist Output Kolom.</h3>');
+  }
+  
+  var headers = accreditatieSheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) { return h.toString().trim(); });
+  var bNaamIndex = headers.indexOf('Bedrijfsnaam');
+  var outputColIndex = headers.indexOf(outputKolomNaam);
+  
+  if (bNaamIndex === -1 || outputColIndex === -1) {
+    return HtmlService.createHtmlOutput('<h3 style="color:red;font-family:sans-serif;text-align:center;margin-top:50px;">Fout: Kolom Bedrijfsnaam of Output Kolom niet gevonden in Accreditatie tabblad.</h3>');
+  }
+  
+  var dataRange = accreditatieSheet.getRange(2, 1, lastRow - 1, headers.length);
+  var data = dataRange.getDisplayValues();
+  var formulas = dataRange.getFormulas();
+  
+  var targetUrl = '';
+  for (var r = 0; r < data.length; r++) {
+    if (data[r][bNaamIndex] == bedrijfsnaam) {
+      var formulaLink = formulas[r][outputColIndex] || '';
+      var stringLink = data[r][outputColIndex] || '';
+      
+      var match = formulaLink.match(/HYPERLINK\("([^"]+)"/i);
+      if (match) {
+        targetUrl = match[1];
+      } else if (stringLink.indexOf('http') === 0) {
+        targetUrl = stringLink;
+      }
+      break;
+    }
+  }
+  
+  if (!targetUrl) {
+    return HtmlService.createHtmlOutput('<h3 style="color:red;font-family:sans-serif;text-align:center;margin-top:50px;">Fout: Geen accreditatiedocument gevonden voor bedrijf: ' + bedrijfsnaam + '</h3>');
+  }
+  
+  var idMatch = targetUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  if (!idMatch) {
+    return HtmlService.createHtmlOutput('<h3 style="color:red;font-family:sans-serif;text-align:center;margin-top:50px;">Fout: Ongeldige document URL gevonden.</h3>');
+  }
+  
+  var id = idMatch[1];
   
   var template = HtmlService.createTemplateFromFile('WebApp');
   template.sheetId = id;
