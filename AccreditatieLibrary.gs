@@ -205,19 +205,27 @@ function _processAccreditatie(alleenGeselecteerd, optSs) {
         
         // Bladbeveiligingen
         var sheetProtections = currentSheet.getProtections(SpreadsheetApp.ProtectionType.SHEET);
-        for (var p = 0; p < sheetProtections.length; p++) {
-          var protection = sheetProtections[p];
-          protection.removeEditors(protection.getEditors());
-          if (bodEmails.length > 0) {
-            protection.addEditors(bodEmails);
+        var protection;
+        if (sheetProtections.length > 0) {
+          protection = sheetProtections[0];
+          // Verwijder eventuele extra overbodige beveiligingen
+          for (var p = 1; p < sheetProtections.length; p++) {
+            sheetProtections[p].remove();
           }
-          
-          var maxRows = currentSheet.getMaxRows();
-          var maxCols = currentSheet.getMaxColumns();
-          if (maxRows >= startRij) {
-            var unprotectedRange = currentSheet.getRange(startRij, 1, maxRows - startRij + 1, maxCols);
-            protection.setUnprotectedRanges([unprotectedRange]);
-          }
+        } else {
+          protection = currentSheet.protect().setDescription('Systeem Beveiliging');
+        }
+        
+        protection.removeEditors(protection.getEditors());
+        if (bodEmails.length > 0) {
+          protection.addEditors(bodEmails);
+        }
+        
+        var maxRows = currentSheet.getMaxRows();
+        var maxCols = currentSheet.getMaxColumns();
+        if (maxRows >= startRij) {
+          var unprotectedRange = currentSheet.getRange(startRij, 1, maxRows - startRij + 1, maxCols);
+          protection.setUnprotectedRanges([unprotectedRange]);
         }
         
         // Range beveiligingen
