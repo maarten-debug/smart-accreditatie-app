@@ -195,13 +195,37 @@ function _processAccreditatie(alleenGeselecteerd, optSs) {
       
       // Verfijn bladbeveiliging vanuit template (als aanwezig)
       var bodEmails = getBODEmails(ss);
-      var allProtections = newSs.getProtections(SpreadsheetApp.ProtectionType.SHEET).concat(newSs.getProtections(SpreadsheetApp.ProtectionType.RANGE));
+      var startRij = parseInt(config['Beveilig template tot rij']) || 10;
       
-      for (var p = 0; p < allProtections.length; p++) {
-        var protection = allProtections[p];
-        protection.removeEditors(protection.getEditors());
-        if (bodEmails.length > 0) {
-          protection.addEditors(bodEmails);
+      var newSheets = newSs.getSheets();
+      for (var s = 0; s < newSheets.length; s++) {
+        var currentSheet = newSheets[s];
+        
+        // Bladbeveiligingen
+        var sheetProtections = currentSheet.getProtections(SpreadsheetApp.ProtectionType.SHEET);
+        for (var p = 0; p < sheetProtections.length; p++) {
+          var protection = sheetProtections[p];
+          protection.removeEditors(protection.getEditors());
+          if (bodEmails.length > 0) {
+            protection.addEditors(bodEmails);
+          }
+          
+          var maxRows = currentSheet.getMaxRows();
+          var maxCols = currentSheet.getMaxColumns();
+          if (maxRows >= startRij) {
+            var unprotectedRange = currentSheet.getRange(startRij, 1, maxRows - startRij + 1, maxCols);
+            protection.setUnprotectedRanges([unprotectedRange]);
+          }
+        }
+        
+        // Range beveiligingen
+        var rangeProtections = currentSheet.getProtections(SpreadsheetApp.ProtectionType.RANGE);
+        for (var p = 0; p < rangeProtections.length; p++) {
+          var protection = rangeProtections[p];
+          protection.removeEditors(protection.getEditors());
+          if (bodEmails.length > 0) {
+            protection.addEditors(bodEmails);
+          }
         }
       }
       
