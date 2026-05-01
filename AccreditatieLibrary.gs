@@ -362,25 +362,46 @@ function mailAccreditatieProces(alleenGeselecteerd, optSs) {
       bodyHtml = bodyHtml.replace(new RegExp('\\{\\{Email Contactpersoon BOD\\}\\}', 'gi'), bodDetails.email);
       bodyHtml = bodyHtml.replace(new RegExp('\\{\\{Mobiel Contactpersoon BOD\\}\\}', 'gi'), bodDetails.mobiel);
       
-      // Voeg blauwe knop toe met de docUrl of Web App URL
+      // Voeg twee knoppen toe: één voor desktop (Sheet) en één voor mobiel (Web App)
       var webAppUrl = config['Web App URL'] || config['Web App url'] || config['web app url'];
+      var primaryColor = config['Kleur Primair'] || config['kleur primair'] || '#1a73e8';
       var ssId = '';
       var ssIdMatch = docUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
       if (ssIdMatch) {
         ssId = ssIdMatch[1];
       }
-      var finalButtonUrl = (webAppUrl && ssId) ? webAppUrl + '?id=' + ssId : docUrl;
       
-      var buttonHtml = '<br><br><a href="' + finalButtonUrl + '" style="' +
-        'background-color: #1a73e8; ' +
+      var buttonHtml = '<br><br>';
+      
+      // Button 1: Desktop (Direct link to Google Sheet)
+      buttonHtml += '<a href="' + docUrl + '" style="' +
+        'background-color: ' + primaryColor + '; ' +
         'color: white; ' +
         'padding: 12px 24px; ' +
         'text-decoration: none; ' +
         'border-radius: 4px; ' +
         'display: inline-block; ' +
+        'margin-bottom: 10px; ' +
         'font-family: Arial, sans-serif; ' +
         'font-weight: bold;">' +
-        'Bekijk Accreditatie ' + bNaam + '</a><br><br>';
+        'Beste voor laptop: Bekijk Accreditatie ' + bNaam + '</a><br>';
+        
+      // Button 2: Mobile (Link to Web App)
+      if (webAppUrl && ssId) {
+        var mobileUrl = webAppUrl + '?id=' + ssId;
+        buttonHtml += '<br><a href="' + mobileUrl + '" style="' +
+          'background-color: ' + primaryColor + '; ' +
+          'color: white; ' +
+          'padding: 12px 24px; ' +
+          'text-decoration: none; ' +
+          'border-radius: 4px; ' +
+          'display: inline-block; ' +
+          'font-family: Arial, sans-serif; ' +
+          'font-weight: bold;">' +
+          'Beste voor mobiel: Bekijk Accreditatie ' + bNaam + ' als webapp</a><br><br>';
+      } else {
+        buttonHtml += '<br>';
+      }
         
       bodyHtml += buttonHtml;
       
