@@ -565,68 +565,110 @@ function syncAllToMaster(optSs) {
     return;
   }
   
-  // 2. Scan Proces
   var files = targetFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
   var totalProcessedRows = 0;
   var totalNewRows = 0;
   var totalChangedRows = 0;
   var totalDeletedRows = 0;
   
+  // GLOBAL CACHE FOR MASTER SHEETS
+  var masterCache = {};
+  var processedFileIds = {};
+  
+  // 2. Scan Proces: Inlezen en updaten in geheugen
   while (files.hasNext()) {
     var file = files.next();
+    var sourceFileId = file.getId();
+    processedFileIds[sourceFileId] = true;
     
-    // 2. Bedrijfsnaam extraheren
+    // Bedrijfsnaam extraheren
     var fileName = file.getName();
     var nameParts = fileName.split(' - ');
     var extractedBedrijfsnaam = nameParts.length > 1 ? nameParts[1].trim() : '';
     
-    var sourceSs = SpreadsheetApp.openById(file.getId());
+    var sourceSs = SpreadsheetApp.openById(sourceFileId);
     var sourceSheets = sourceSs.getSheets();
     
     for (var s = 0; s < sourceSheets.length; s++) {
       var sourceSheet = sourceSheets[s];
       var sheetName = sourceSheet.getName();
-      var masterSheet = masterSs.getSheetByName(sheetName);
       
+      var masterSheet = masterSs.getSheetByName(sheetName);
       if (!masterSheet) continue; // Match op exacte tabblad naam
       
-      // 3. Slimme Kolom-Mapping
-      var masterLastCol = masterSheet.getLastColumn();
+      // Initialize cache for this sheetName if not exists
+      if (!masterCache[sheetName]) {
+        var m_lastCol = masterSheet.getLastColumn();
+        if (m_lastCol === 0) continue;
+        
+        var m_headers = masterSheet.getRange(9, 1, 1, m_lastCol).getValues()[0];
+        
+        // Controleer/Voeg SyncKey en SyncStatus kolommen toe in Master
+        var syncKeyIndex = m_headers.indexOf('SyncKey');
+        if (syncKeyIndex === -1) {
+          syncKeyIndex = m_lastCol;
+          masterSheet.getRange(9, syncKeyIndex + 1).setValue('SyncKey');
+          m_headers.push('SyncKey');
+          m_lastCol++;
+        }
+        
+        var statusIndex = m_headers.indexOf('SyncStatus');
+        if (statusIndex === -1) {
+          statusIndex = m_lastCol;
+          masterSheet.getRange(9, statusIndex + 1).setValue('SyncStatus');
+          m_headers.push('SyncStatus');
+          m_lastCol++;
+        }
+        
+        var m_lastRow = masterSheet.getLastRow();
+        var m_data = [];
+        var m_colors = [];
+        if (m_lastRow >= startRow) {
+          var masterRange = masterSheet.getRange(startRow, 1, m_lastRow - startRow + 1, m_lastCol);
+          m_data = masterRange.getDisplayValues();
+          m_colors = masterRange.getBackgrounds();
+        }
+        
+        var m_keyMap = {};
+        for (var mr = 0; mr < m_data.length; mr++) {
+          var key = m_data[mr][syncKeyIndex];
+          if (key) {
+            m_keyMap[key] = mr;
+          }
+        }
+        
+        masterCache[sheetName] = {
+          sheet: masterSheet,
+          lastCol: m_lastCol,
+          lastRow: m_lastRow,
+          headers: m_headers,
+          data: m_data,
+          colors: m_colors,
+          keyMap: m_keyMap,
+          syncKeyIndex: syncKeyIndex,
+          statusIndex: statusIndex,
+          bNameMasterIdx: m_headers.indexOf('Bedrijfsnaam'),
+          cPersoonMasterIdx: m_headers.indexOf('Contactpersoon bedrijf'),
+          cBodMasterIdx: m_headers.indexOf('Contactpersoon BOD'),
+          newRows: [],
+          newColors: [],
+          updatesNeeded: false,
+          sourceKeysPresent: {}
+        };
+      }
+      
+      var cache = masterCache[sheetName];
       var sourceLastCol = sourceSheet.getLastColumn();
+      if (sourceLastCol === 0) continue;
       
-      if (masterLastCol === 0 || sourceLastCol === 0) continue;
-      
-      var masterHeaders = masterSheet.getRange(9, 1, 1, masterLastCol).getValues()[0];
       var sourceHeaders = sourceSheet.getRange(9, 1, 1, sourceLastCol).getValues()[0];
-      
-      // Controleer/Voeg SyncKey en SyncStatus kolommen toe in Master
-      var syncKeyIndex = masterHeaders.indexOf('SyncKey');
-      if (syncKeyIndex === -1) {
-        syncKeyIndex = masterLastCol;
-        masterSheet.getRange(9, syncKeyIndex + 1).setValue('SyncKey');
-        masterHeaders.push('SyncKey');
-        masterLastCol++;
-      }
-      
-      var statusIndex = masterHeaders.indexOf('SyncStatus');
-      if (statusIndex === -1) {
-        statusIndex = masterLastCol;
-        masterSheet.getRange(9, statusIndex + 1).setValue('SyncStatus');
-        masterHeaders.push('SyncStatus');
-        masterLastCol++;
-      }
-      
-      // Indexen voor auto-injectie kolommen
-      var bNameMasterIdx = masterHeaders.indexOf('Bedrijfsnaam');
-      var cPersoonMasterIdx = masterHeaders.indexOf('Contactpersoon bedrijf');
-      var cBodMasterIdx = masterHeaders.indexOf('Contactpersoon BOD');
       
       var colMap = {}; // source col index -> master col index
       var hasMapping = false;
       for (var sc = 0; sc < sourceHeaders.length; sc++) {
         var sh = sourceHeaders[sc];
         if (sh) {
-          var mc = masterHeaders.indexOf(sh);
+          var mc = cache.headers.indexOf(sh);
           if (mc !== -1) {
             colMap[sc] = mc;
             hasMapping = true;
@@ -636,35 +678,10 @@ function syncAllToMaster(optSs) {
       
       if (!hasMapping) continue;
       
-      // 4. Synchronisatie Logica per Rij
       var sourceLastRow = sourceSheet.getLastRow();
       if (sourceLastRow < startRow) continue;
       
       var sourceData = sourceSheet.getRange(startRow, 1, sourceLastRow - startRow + 1, sourceLastCol).getDisplayValues();
-      var sourceFileId = file.getId();
-      
-      var masterLastRow = masterSheet.getLastRow();
-      var masterData = [];
-      var masterColors = [];
-      if (masterLastRow >= startRow) {
-        var masterRange = masterSheet.getRange(startRow, 1, masterLastRow - startRow + 1, masterLastCol);
-        masterData = masterRange.getDisplayValues();
-        masterColors = masterRange.getBackgrounds();
-      }
-      
-      var masterKeyMap = {}; // SyncKey -> rowIndex in masterData
-      for (var mr = 0; mr < masterData.length; mr++) {
-        var key = masterData[mr][syncKeyIndex];
-        if (key) {
-          masterKeyMap[key] = mr;
-        }
-      }
-      
-      var newRows = [];
-      var newColors = [];
-      var sourceKeysPresent = {};
-      var updatesNeeded = false;
-      
       var voornaamIdx = sourceHeaders.indexOf('Voornaam');
       var achternaamIdx = sourceHeaders.indexOf('Achternaam');
       
@@ -681,115 +698,122 @@ function syncAllToMaster(optSs) {
         
         var key = sourceFileId + '_' + sheetName + '_' + (startRow + r);
         
-        sourceKeysPresent[key] = true;
+        cache.sourceKeysPresent[key] = true;
         totalProcessedRows++;
         
-        if (masterKeyMap.hasOwnProperty(key)) {
+        if (cache.keyMap.hasOwnProperty(key)) {
           // Bestaande regel
-          var mrIndex = masterKeyMap[key];
-          var masterRow = masterData[mrIndex];
+          var mrIndex = cache.keyMap[key];
+          var masterRow = cache.data[mrIndex];
           var changed = false;
           
           for (var sc in colMap) {
             var mc = colMap[sc];
             if (row[sc] !== masterRow[mc]) {
-              masterData[mrIndex][mc] = row[sc];
+              cache.data[mrIndex][mc] = row[sc];
               changed = true;
             }
           }
           
-          // 3. Speciale Kolommen injecteren
-          if (bNameMasterIdx !== -1 && extractedBedrijfsnaam && extractedBedrijfsnaam !== masterRow[bNameMasterIdx]) {
-            masterData[mrIndex][bNameMasterIdx] = extractedBedrijfsnaam;
+          // Speciale Kolommen injecteren
+          if (cache.bNameMasterIdx !== -1 && extractedBedrijfsnaam && extractedBedrijfsnaam !== masterRow[cache.bNameMasterIdx]) {
+            cache.data[mrIndex][cache.bNameMasterIdx] = extractedBedrijfsnaam;
             changed = true;
           }
           var info = extractedBedrijfsnaam ? bedrijfInfo[extractedBedrijfsnaam] : null;
           if (info) {
-            if (cPersoonMasterIdx !== -1 && info['Contactpersoon'] !== masterRow[cPersoonMasterIdx]) {
-              masterData[mrIndex][cPersoonMasterIdx] = info['Contactpersoon'];
+            if (cache.cPersoonMasterIdx !== -1 && info['Contactpersoon'] !== masterRow[cache.cPersoonMasterIdx]) {
+              cache.data[mrIndex][cache.cPersoonMasterIdx] = info['Contactpersoon'];
               changed = true;
             }
-            if (cBodMasterIdx !== -1 && info['Contactpersoon BOD'] !== masterRow[cBodMasterIdx]) {
-              masterData[mrIndex][cBodMasterIdx] = info['Contactpersoon BOD'];
+            if (cache.cBodMasterIdx !== -1 && info['Contactpersoon BOD'] !== masterRow[cache.cBodMasterIdx]) {
+              cache.data[mrIndex][cache.cBodMasterIdx] = info['Contactpersoon BOD'];
               changed = true;
             }
           }
           
           if (changed) {
-            masterData[mrIndex][statusIndex] = 'Gewijzigd';
+            cache.data[mrIndex][cache.statusIndex] = 'Gewijzigd';
             // Kleur rij lichtoranje
-            for (var c = 0; c < masterLastCol; c++) {
-              masterColors[mrIndex][c] = '#FFE5B4';
+            for (var c = 0; c < cache.lastCol; c++) {
+              cache.colors[mrIndex][c] = '#FFE5B4';
             }
-            updatesNeeded = true;
+            cache.updatesNeeded = true;
             totalChangedRows++;
           }
         } else {
           // Nieuwe regel
-          var newMasterRow = new Array(masterLastCol);
-          for (var i = 0; i < masterLastCol; i++) newMasterRow[i] = '';
+          var newMasterRow = new Array(cache.lastCol);
+          for (var i = 0; i < cache.lastCol; i++) newMasterRow[i] = '';
           
           for (var sc in colMap) {
             var mc = colMap[sc];
             newMasterRow[mc] = row[sc];
           }
           
-          // 3. Speciale Kolommen injecteren
-          if (bNameMasterIdx !== -1 && extractedBedrijfsnaam) {
-            newMasterRow[bNameMasterIdx] = extractedBedrijfsnaam;
+          // Speciale Kolommen injecteren
+          if (cache.bNameMasterIdx !== -1 && extractedBedrijfsnaam) {
+            newMasterRow[cache.bNameMasterIdx] = extractedBedrijfsnaam;
           }
           var info = extractedBedrijfsnaam ? bedrijfInfo[extractedBedrijfsnaam] : null;
           if (info) {
-            if (cPersoonMasterIdx !== -1) {
-              newMasterRow[cPersoonMasterIdx] = info['Contactpersoon'] || '';
+            if (cache.cPersoonMasterIdx !== -1) {
+              newMasterRow[cache.cPersoonMasterIdx] = info['Contactpersoon'] || '';
             }
-            if (cBodMasterIdx !== -1) {
-              newMasterRow[cBodMasterIdx] = info['Contactpersoon BOD'] || '';
+            if (cache.cBodMasterIdx !== -1) {
+              newMasterRow[cache.cBodMasterIdx] = info['Contactpersoon BOD'] || '';
             }
           }
           
-          newMasterRow[syncKeyIndex] = key;
-          newMasterRow[statusIndex] = 'Nieuw';
+          newMasterRow[cache.syncKeyIndex] = key;
+          newMasterRow[cache.statusIndex] = 'Nieuw';
           
-          newRows.push(newMasterRow);
+          cache.newRows.push(newMasterRow);
           
-          var rowColor = new Array(masterLastCol);
-          for (var i = 0; i < masterLastCol; i++) rowColor[i] = null;
-          newColors.push(rowColor);
+          var rowColor = new Array(cache.lastCol);
+          for (var i = 0; i < cache.lastCol; i++) rowColor[i] = null;
+          cache.newColors.push(rowColor);
           
           totalNewRows++;
         }
       }
-      
-      // Check voor rijen die verwijderd zijn uit de bron maar wel in de master staan
-      for (var k in masterKeyMap) {
-        if (k.indexOf(sourceFileId + '_' + sheetName + '_') === 0 && !sourceKeysPresent[k]) {
-          var mrIndex = masterKeyMap[k];
-          if (masterData[mrIndex][statusIndex] !== 'Verwijderd') {
-            masterData[mrIndex][statusIndex] = 'Verwijderd';
-            updatesNeeded = true;
-            totalDeletedRows++;
-          }
-        }
-      }
-      
-      // 5. Efficiëntie: Batch updates
-      if (updatesNeeded && masterData.length > 0) {
-        var updateRange = masterSheet.getRange(startRow, 1, masterData.length, masterLastCol);
-        updateRange.setValues(masterData);
-        updateRange.setBackgrounds(masterColors);
-      }
-      
-      if (newRows.length > 0) {
-        var targetStartRow = (masterLastRow >= startRow) ? (startRow + masterData.length) : startRow;
-        var newRange = masterSheet.getRange(targetStartRow, 1, newRows.length, masterLastCol);
-        newRange.setValues(newRows);
-        newRange.setBackgrounds(newColors);
-      }
-      
-      SpreadsheetApp.flush();
     }
   }
+  
+  // 3. Batch Updates uitvoeren
+  for (var sheetName in masterCache) {
+    var cache = masterCache[sheetName];
+    
+    // Check voor rijen die verwijderd zijn uit de bron maar wel in de master staan
+    for (var k in cache.keyMap) {
+      // Verwijder alleen rijen van bestanden die nog steeds in de doelmap staan
+      var sourceFileId = k.split('_')[0];
+      if (processedFileIds[sourceFileId] && !cache.sourceKeysPresent[k]) {
+        var mrIndex = cache.keyMap[k];
+        if (cache.data[mrIndex][cache.statusIndex] !== 'Verwijderd') {
+          cache.data[mrIndex][cache.statusIndex] = 'Verwijderd';
+          cache.updatesNeeded = true;
+          totalDeletedRows++;
+        }
+      }
+    }
+    
+    // Schrijf alle aanpassingen in 1x naar de sheet
+    if (cache.updatesNeeded && cache.data.length > 0) {
+      var updateRange = cache.sheet.getRange(startRow, 1, cache.data.length, cache.lastCol);
+      updateRange.setValues(cache.data);
+      updateRange.setBackgrounds(cache.colors);
+    }
+    
+    if (cache.newRows.length > 0) {
+      var targetStartRow = (cache.lastRow >= startRow) ? (startRow + cache.data.length) : startRow;
+      var newRange = cache.sheet.getRange(targetStartRow, 1, cache.newRows.length, cache.lastCol);
+      newRange.setValues(cache.newRows);
+      newRange.setBackgrounds(cache.newColors);
+    }
+  }
+  
+  SpreadsheetApp.flush();
   
   if (ui) {
     ui.alert('Synchronisatie voltooid!\n\n' +
