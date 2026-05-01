@@ -665,12 +665,18 @@ function syncAllToMaster(optSs) {
       var sourceKeysPresent = {};
       var updatesNeeded = false;
       
+      var voornaamIdx = sourceHeaders.indexOf('Voornaam');
+      var achternaamIdx = sourceHeaders.indexOf('Achternaam');
+      
       for (var r = 0; r < sourceData.length; r++) {
         var row = sourceData[r];
         
         // Controleer of de rij leeg is in de bron
-        if (row.join('').trim() === '') {
-          continue;
+        var vNaam = (voornaamIdx !== -1 && row[voornaamIdx]) ? row[voornaamIdx].toString().trim() : '';
+        var aNaam = (achternaamIdx !== -1 && row[achternaamIdx]) ? row[achternaamIdx].toString().trim() : '';
+
+        if (vNaam === '' && aNaam === '') {
+          continue; // Sla deze rij over, het is een lege (of alleen checkbox) rij
         }
         
         var key = sourceFileId + '_' + sheetName + '_' + (startRow + r);
