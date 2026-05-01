@@ -490,3 +490,251 @@ function mailAccreditatieProces(alleenGeselecteerd, optSs, isConcept) {
   }
 }
 
+/**
+ * Synchroniseert data van alle sheets in de 'Doelmap' naar een externe 'Master Sheet'
+ * met intelligente kolom-mapping.
+ */
+function syncAllToMaster(optSs) {
+  var ui;
+  try {
+    ui = SpreadsheetApp.getUi();
+  } catch (e) {
+    ui = null;
+  }
+  
+  var ss = optSs || SpreadsheetApp.getActiveSpreadsheet();
+  var configObj = getConfiguratie(ss);
+  
+  if (!configObj) {
+    if (ui) ui.alert('Fout: Tabblad "Configuratie" niet gevonden.');
+    return;
+  }
+  
+  var config = configObj.config;
+  
+  var masterId = config['Master Sheet ID'];
+  var folderId = config['Doelmap ID'];
+  var startRow = parseInt(config['Beveilig template tot rij']) || 10;
+  
+  if (!masterId || !folderId) {
+    if (ui) ui.alert('Fout: Zorg dat Master Sheet ID en Doelmap ID zijn ingevuld in de configuratie.');
+    return;
+  }
+  
+  var targetFolder;
+  try {
+    targetFolder = DriveApp.getFolderById(folderId);
+  } catch (e) {
+    if (ui) ui.alert('Fout: Doelmap ID is onjuist of niet toegankelijk.');
+    return;
+  }
+  
+  var masterSs;
+  try {
+    masterSs = SpreadsheetApp.openById(masterId);
+  } catch (e) {
+    if (ui) ui.alert('Fout: Master Sheet ID is onjuist of niet toegankelijk.');
+    return;
+  }
+  
+  // 2. Scan Proces
+  var files = targetFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
+  var totalProcessedRows = 0;
+  var totalNewRows = 0;
+  var totalChangedRows = 0;
+  var totalDeletedRows = 0;
+  
+  while (files.hasNext()) {
+    var file = files.next();
+    var sourceSs = SpreadsheetApp.openById(file.getId());
+    var sourceSheets = sourceSs.getSheets();
+    
+    for (var s = 0; s < sourceSheets.length; s++) {
+      var sourceSheet = sourceSheets[s];
+      var sheetName = sourceSheet.getName();
+      var masterSheet = masterSs.getSheetByName(sheetName);
+      
+      if (!masterSheet) continue; // Match op exacte tabblad naam
+      
+      // 3. Slimme Kolom-Mapping
+      var masterLastCol = masterSheet.getLastColumn();
+      var sourceLastCol = sourceSheet.getLastColumn();
+      
+      if (masterLastCol === 0 || sourceLastCol === 0) continue;
+      
+      var masterHeaders = masterSheet.getRange(9, 1, 1, masterLastCol).getValues()[0];
+      var sourceHeaders = sourceSheet.getRange(9, 1, 1, sourceLastCol).getValues()[0];
+      
+      // Controleer/Voeg SyncKey en SyncStatus kolommen toe in Master
+      var syncKeyIndex = masterHeaders.indexOf('SyncKey');
+      if (syncKeyIndex === -1) {
+        syncKeyIndex = masterLastCol;
+        masterSheet.getRange(9, syncKeyIndex + 1).setValue('SyncKey');
+        masterHeaders.push('SyncKey');
+        masterLastCol++;
+      }
+      
+      var statusIndex = masterHeaders.indexOf('SyncStatus');
+      if (statusIndex === -1) {
+        statusIndex = masterLastCol;
+        masterSheet.getRange(9, statusIndex + 1).setValue('SyncStatus');
+        masterHeaders.push('SyncStatus');
+        masterLastCol++;
+      }
+      
+      var colMap = {}; // source col index -> master col index
+      var hasMapping = false;
+      for (var sc = 0; sc < sourceHeaders.length; sc++) {
+        var sh = sourceHeaders[sc];
+        if (sh) {
+          var mc = masterHeaders.indexOf(sh);
+          if (mc !== -1) {
+            colMap[sc] = mc;
+            hasMapping = true;
+          }
+        }
+      }
+      
+      if (!hasMapping) continue;
+      
+      // 4. Synchronisatie Logica per Rij
+      var sourceLastRow = sourceSheet.getLastRow();
+      if (sourceLastRow < startRow) continue;
+      
+      var sourceData = sourceSheet.getRange(startRow, 1, sourceLastRow - startRow + 1, sourceLastCol).getDisplayValues();
+      var sourceFileId = file.getId();
+      
+      var masterLastRow = masterSheet.getLastRow();
+      var masterData = [];
+      var masterColors = [];
+      if (masterLastRow >= startRow) {
+        var masterRange = masterSheet.getRange(startRow, 1, masterLastRow - startRow + 1, masterLastCol);
+        masterData = masterRange.getDisplayValues();
+        masterColors = masterRange.getBackgrounds();
+      }
+      
+      var masterKeyMap = {}; // SyncKey -> rowIndex in masterData
+      for (var mr = 0; mr < masterData.length; mr++) {
+        var key = masterData[mr][syncKeyIndex];
+        if (key) {
+          masterKeyMap[key] = mr;
+        }
+      }
+      
+      var newRows = [];
+      var newColors = [];
+      var sourceKeysPresent = {};
+      var updatesNeeded = false;
+      
+      for (var r = 0; r < sourceData.length; r++) {
+        var row = sourceData[r];
+        
+        // Controleer of de rij leeg is in de bron
+        var isEmpty = true;
+        for (var c = 0; c < row.length; c++) {
+          if (row[c] !== '') {
+            isEmpty = false;
+            break;
+          }
+        }
+        
+        var key = sourceFileId + '_' + sheetName + '_' + (startRow + r);
+        
+        if (isEmpty) {
+          if (masterKeyMap.hasOwnProperty(key)) {
+            var mrIndex = masterKeyMap[key];
+            if (masterData[mrIndex][statusIndex] !== 'Verwijderd') {
+              masterData[mrIndex][statusIndex] = 'Verwijderd';
+              updatesNeeded = true;
+              totalDeletedRows++;
+            }
+          }
+          continue;
+        }
+        
+        sourceKeysPresent[key] = true;
+        totalProcessedRows++;
+        
+        if (masterKeyMap.hasOwnProperty(key)) {
+          // Bestaande regel
+          var mrIndex = masterKeyMap[key];
+          var masterRow = masterData[mrIndex];
+          var changed = false;
+          
+          for (var sc in colMap) {
+            var mc = colMap[sc];
+            if (row[sc] !== masterRow[mc]) {
+              masterData[mrIndex][mc] = row[sc];
+              changed = true;
+            }
+          }
+          
+          if (changed) {
+            masterData[mrIndex][statusIndex] = 'Gewijzigd';
+            // Kleur rij lichtoranje
+            for (var c = 0; c < masterLastCol; c++) {
+              masterColors[mrIndex][c] = '#FFE5B4';
+            }
+            updatesNeeded = true;
+            totalChangedRows++;
+          }
+        } else {
+          // Nieuwe regel
+          var newMasterRow = new Array(masterLastCol);
+          for (var i = 0; i < masterLastCol; i++) newMasterRow[i] = '';
+          
+          for (var sc in colMap) {
+            var mc = colMap[sc];
+            newMasterRow[mc] = row[sc];
+          }
+          newMasterRow[syncKeyIndex] = key;
+          newMasterRow[statusIndex] = 'Nieuw';
+          
+          newRows.push(newMasterRow);
+          
+          var rowColor = new Array(masterLastCol);
+          for (var i = 0; i < masterLastCol; i++) rowColor[i] = null;
+          newColors.push(rowColor);
+          
+          totalNewRows++;
+        }
+      }
+      
+      // Check voor rijen die verwijderd zijn uit de bron maar wel in de master staan
+      for (var k in masterKeyMap) {
+        if (k.indexOf(sourceFileId + '_' + sheetName + '_') === 0 && !sourceKeysPresent[k]) {
+          var mrIndex = masterKeyMap[k];
+          if (masterData[mrIndex][statusIndex] !== 'Verwijderd') {
+            masterData[mrIndex][statusIndex] = 'Verwijderd';
+            updatesNeeded = true;
+            totalDeletedRows++;
+          }
+        }
+      }
+      
+      // 5. Efficiëntie: Batch updates
+      if (updatesNeeded && masterData.length > 0) {
+        var updateRange = masterSheet.getRange(startRow, 1, masterData.length, masterLastCol);
+        updateRange.setValues(masterData);
+        updateRange.setBackgrounds(masterColors);
+      }
+      
+      if (newRows.length > 0) {
+        var targetStartRow = (masterLastRow >= startRow) ? (startRow + masterData.length) : startRow;
+        var newRange = masterSheet.getRange(targetStartRow, 1, newRows.length, masterLastCol);
+        newRange.setValues(newRows);
+        newRange.setBackgrounds(newColors);
+      }
+      
+      SpreadsheetApp.flush();
+    }
+  }
+  
+  if (ui) {
+    ui.alert('Synchronisatie voltooid!\n\n' +
+      'Rijen verwerkt: ' + totalProcessedRows + '\n' +
+      'Nieuw: ' + totalNewRows + '\n' +
+      'Gewijzigd: ' + totalChangedRows + '\n' +
+      'Verwijderd: ' + totalDeletedRows);
+  }
+}
