@@ -503,6 +503,32 @@ function syncAllToMaster(optSs) {
   }
   
   var ss = optSs || SpreadsheetApp.getActiveSpreadsheet();
+  
+  // 1. Lookup Tabel maken
+  var bedrijfInfo = {};
+  var accSheet = ss.getSheetByName('Accreditatie');
+  if (accSheet) {
+    var accData = accSheet.getDataRange().getValues();
+    if (accData.length > 0) {
+      var accHeaders = accData[0];
+      var bNameIdx = accHeaders.indexOf('Bedrijfsnaam');
+      var cPersoonIdx = accHeaders.indexOf('Contactpersoon');
+      var cBodIdx = accHeaders.indexOf('Contactpersoon BOD');
+      
+      if (bNameIdx !== -1) {
+        for (var i = 1; i < accData.length; i++) {
+          var bn = accData[i][bNameIdx] ? accData[i][bNameIdx].toString().trim() : '';
+          if (bn) {
+            bedrijfInfo[bn] = {
+              'Contactpersoon': cPersoonIdx !== -1 ? accData[i][cPersoonIdx] : '',
+              'Contactpersoon BOD': cBodIdx !== -1 ? accData[i][cBodIdx] : ''
+            };
+          }
+        }
+      }
+    }
+  }
+
   var configObj = getConfiguratie(ss);
   
   if (!configObj) {
@@ -546,6 +572,12 @@ function syncAllToMaster(optSs) {
   
   while (files.hasNext()) {
     var file = files.next();
+    
+    // 2. Bedrijfsnaam extraheren
+    var fileName = file.getName();
+    var nameParts = fileName.split(' - ');
+    var extractedBedrijfsnaam = nameParts.length > 1 ? nameParts[1].trim() : '';
+    
     var sourceSs = SpreadsheetApp.openById(file.getId());
     var sourceSheets = sourceSs.getSheets();
     
@@ -581,6 +613,11 @@ function syncAllToMaster(optSs) {
         masterHeaders.push('SyncStatus');
         masterLastCol++;
       }
+      
+      // Indexen voor auto-injectie kolommen
+      var bNameMasterIdx = masterHeaders.indexOf('Bedrijfsnaam');
+      var cPersoonMasterIdx = masterHeaders.indexOf('Contactpersoon bedrijf');
+      var cBodMasterIdx = masterHeaders.indexOf('Contactpersoon BOD');
       
       var colMap = {}; // source col index -> master col index
       var hasMapping = false;
@@ -669,6 +706,23 @@ function syncAllToMaster(optSs) {
             }
           }
           
+          // 3. Speciale Kolommen injecteren
+          if (bNameMasterIdx !== -1 && extractedBedrijfsnaam && extractedBedrijfsnaam !== masterRow[bNameMasterIdx]) {
+            masterData[mrIndex][bNameMasterIdx] = extractedBedrijfsnaam;
+            changed = true;
+          }
+          var info = extractedBedrijfsnaam ? bedrijfInfo[extractedBedrijfsnaam] : null;
+          if (info) {
+            if (cPersoonMasterIdx !== -1 && info['Contactpersoon'] !== masterRow[cPersoonMasterIdx]) {
+              masterData[mrIndex][cPersoonMasterIdx] = info['Contactpersoon'];
+              changed = true;
+            }
+            if (cBodMasterIdx !== -1 && info['Contactpersoon BOD'] !== masterRow[cBodMasterIdx]) {
+              masterData[mrIndex][cBodMasterIdx] = info['Contactpersoon BOD'];
+              changed = true;
+            }
+          }
+          
           if (changed) {
             masterData[mrIndex][statusIndex] = 'Gewijzigd';
             // Kleur rij lichtoranje
@@ -687,6 +741,21 @@ function syncAllToMaster(optSs) {
             var mc = colMap[sc];
             newMasterRow[mc] = row[sc];
           }
+          
+          // 3. Speciale Kolommen injecteren
+          if (bNameMasterIdx !== -1 && extractedBedrijfsnaam) {
+            newMasterRow[bNameMasterIdx] = extractedBedrijfsnaam;
+          }
+          var info = extractedBedrijfsnaam ? bedrijfInfo[extractedBedrijfsnaam] : null;
+          if (info) {
+            if (cPersoonMasterIdx !== -1) {
+              newMasterRow[cPersoonMasterIdx] = info['Contactpersoon'] || '';
+            }
+            if (cBodMasterIdx !== -1) {
+              newMasterRow[cBodMasterIdx] = info['Contactpersoon BOD'] || '';
+            }
+          }
+          
           newMasterRow[syncKeyIndex] = key;
           newMasterRow[statusIndex] = 'Nieuw';
           
