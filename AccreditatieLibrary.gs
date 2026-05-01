@@ -669,27 +669,11 @@ function syncAllToMaster(optSs) {
         var row = sourceData[r];
         
         // Controleer of de rij leeg is in de bron
-        var isEmpty = true;
-        for (var c = 0; c < row.length; c++) {
-          if (row[c] !== '') {
-            isEmpty = false;
-            break;
-          }
+        if (row.join('').trim() === '') {
+          continue;
         }
         
         var key = sourceFileId + '_' + sheetName + '_' + (startRow + r);
-        
-        if (isEmpty) {
-          if (masterKeyMap.hasOwnProperty(key)) {
-            var mrIndex = masterKeyMap[key];
-            if (masterData[mrIndex][statusIndex] !== 'Verwijderd') {
-              masterData[mrIndex][statusIndex] = 'Verwijderd';
-              updatesNeeded = true;
-              totalDeletedRows++;
-            }
-          }
-          continue;
-        }
         
         sourceKeysPresent[key] = true;
         totalProcessedRows++;
