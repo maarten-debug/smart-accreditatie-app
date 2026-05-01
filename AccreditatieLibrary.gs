@@ -278,20 +278,27 @@ function _processAccreditatie(alleenGeselecteerd, optSs) {
  * Hoofdfunctie om mails te sturen voor alle rijen.
  */
 function mailAccreditatieProcesAlle(optSs) {
-  mailAccreditatieProces(false, optSs);
+  mailAccreditatieProces(false, optSs, false);
 }
 
 /**
  * Functie om de mail te sturen voor de geselecteerde rij.
  */
 function mailAccreditatieProcesGeselecteerd(optSs) {
-  mailAccreditatieProces(true, optSs);
+  mailAccreditatieProces(true, optSs, false);
 }
 
 /**
- * Interne processor voor het verzenden van e-mails.
+ * Functie om een concept mail klaar te zetten voor de geselecteerde rij.
  */
-function mailAccreditatieProces(alleenGeselecteerd, optSs) {
+function mailAccreditatieProcesGeselecteerdConcept(optSs) {
+  mailAccreditatieProces(true, optSs, true);
+}
+
+/**
+ * Interne processor voor het verzenden (of klaarzetten) van e-mails.
+ */
+function mailAccreditatieProces(alleenGeselecteerd, optSs, isConcept) {
   var ui;
   try {
     ui = SpreadsheetApp.getUi();
@@ -436,28 +443,46 @@ function mailAccreditatieProces(alleenGeselecteerd, optSs) {
           mailOptions.cc = bodDetails.email;
         }
         
-        // GmailApp zorgt ervoor dat het ook in Verzonden Items komt in de Google Workspace
-        GmailApp.sendEmail(targetEmail, subject, 'Bekijk de accreditatie hier: ' + docUrl, mailOptions);
+        if (isConcept) {
+          GmailApp.createDraft(targetEmail, subject, 'Bekijk de accreditatie hier: ' + docUrl, mailOptions);
+          
+          var now = new Date();
+          var timestamp = Utilities.formatDate(now, ss.getSpreadsheetTimeZone(), "dd-MM HH:mm");
+          var statusMessage = timestamp + ' concept ' + bodAfkorting;
+          sheet.getRange(rowNum, sendColIndex + 1).setValue(statusMessage);
+          
+          if (ss && ss.toast) {
+            ss.toast('Concept aangemaakt voor ' + bNaam, 'Succes', 5);
+          }
+        } else {
+          // GmailApp zorgt ervoor dat het ook in Verzonden Items komt in de Google Workspace
+          GmailApp.sendEmail(targetEmail, subject, 'Bekijk de accreditatie hier: ' + docUrl, mailOptions);
+          
+          // Noteer verzendmoment
+          var now = new Date();
+          var timestamp = Utilities.formatDate(now, ss.getSpreadsheetTimeZone(), "dd-MM HH:mm");
+          sheet.getRange(rowNum, sendColIndex + 1).setValue(timestamp);
+        }
         
-        // Noteer verzendmoment
-        var now = new Date();
-        var timestamp = Utilities.formatDate(now, ss.getSpreadsheetTimeZone(), "dd-MM HH:mm");
-        sheet.getRange(rowNum, sendColIndex + 1).setValue(timestamp);
         SpreadsheetApp.flush();
         totalProcessed++;
         
       } catch (err) {
-        Logger.log('Fout bij verzenden email naar ' + targetEmail + ': ' + err.message);
+        Logger.log('Fout bij verzenden/klaarzetten email naar ' + targetEmail + ': ' + err.message);
       }
     }
   }
   
   if (ui) {
     if (totalProcessed > 0) {
-      ui.alert('Succes! ' + totalProcessed + ' e-mail(s) verstuurd.');
+      if (isConcept) {
+        ui.alert('Succes! ' + totalProcessed + ' concept e-mail(s) klaargezet.');
+      } else {
+        ui.alert('Succes! ' + totalProcessed + ' e-mail(s) verstuurd.');
+      }
     } else {
       if (!alleenGeselecteerd) {
-        ui.alert('Klaar. Er waren geen te verzenden e-mails gevonden (link ontbreekt of mail was al verstuurd).');
+        ui.alert('Klaar. Er waren geen te verwerken e-mails gevonden (link ontbreekt of reeds verwerkt).');
       } else {
         ui.alert('Klaar. Voor de geselecteerde rij ontbreekt de link of is de mail al verstuurd.');
       }
