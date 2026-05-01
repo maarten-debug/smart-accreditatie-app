@@ -388,7 +388,8 @@ function mailAccreditatieProces(alleenGeselecteerd, optSs) {
         
       // Button 2: Mobile (Link to Web App)
       if (webAppUrl && ssId) {
-        var mobileUrl = webAppUrl + '?sid=APP_' + ssId;
+        var longUrl = webAppUrl + '?sid=' + ssId;
+        var mobileUrl = getShortUrl(longUrl);
         buttonHtml += '<br><a href="' + mobileUrl + '" style="' +
           'background-color: ' + primaryColor + '; ' +
           'color: white; ' +
@@ -451,11 +452,22 @@ function mailAccreditatieProces(alleenGeselecteerd, optSs) {
 }
 
 /**
+ * Helper voor URL shortener om Drive app te omzeilen
+ */
+function getShortUrl(longUrl) {
+  try {
+    var response = UrlFetchApp.fetch('https://tinyurl.com/api-create.php?url=' + encodeURIComponent(longUrl));
+    return response.getContentText();
+  } catch (e) {
+    return longUrl; // Fallback naar lange URL als TinyURL faalt
+  }
+}
+
+/**
  * Web App Entry Point
  */
 function doGet(e) {
-  var rawId = e.parameter.sid;
-  var id = rawId ? rawId.replace('APP_', '') : null;
+  var id = e.parameter.sid;
   if (!id) {
     return HtmlService.createHtmlOutput('<h3 style="color:red;font-family:sans-serif;text-align:center;margin-top:50px;">Fout: Geen ID opgegeven in URL.</h3>');
   }
