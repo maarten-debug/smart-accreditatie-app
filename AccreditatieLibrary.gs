@@ -720,26 +720,59 @@ function syncAllToMaster(optSs) {
           
           for (var sc in colMap) {
             var mc = colMap[sc];
-            if (row[sc] !== masterRow[mc]) {
+            
+            var valSource = row[sc] ? row[sc].toString().trim() : '';
+            var valMaster = masterRow[mc] ? masterRow[mc].toString().trim() : '';
+            
+            var vS_low = valSource.toLowerCase();
+            var vM_low = valMaster.toLowerCase();
+            
+            // Normaliseer checkboxes
+            if (vS_low === 'waar') vS_low = 'true';
+            if (vS_low === 'onwaar') vS_low = 'false';
+            if (vM_low === 'waar') vM_low = 'true';
+            if (vM_low === 'onwaar') vM_low = 'false';
+            
+            // Normaliseer voorloopnullen (getallen)
+            if (vS_low !== vM_low && !isNaN(valMaster) && valMaster !== '') {
+              if (vS_low.replace(/^0+/, '') === vM_low.replace(/^0+/, '')) {
+                vS_low = vM_low; // Ze zijn wiskundig hetzelfde
+              }
+            }
+            
+            if (vS_low !== vM_low) {
               cache.data[mrIndex][mc] = row[sc];
               changed = true;
             }
           }
           
           // Speciale Kolommen injecteren
-          if (cache.bNameMasterIdx !== -1 && extractedBedrijfsnaam && extractedBedrijfsnaam !== masterRow[cache.bNameMasterIdx]) {
-            cache.data[mrIndex][cache.bNameMasterIdx] = extractedBedrijfsnaam;
-            changed = true;
-          }
-          var info = extractedBedrijfsnaam ? bedrijfInfo[extractedBedrijfsnaam] : null;
-          if (info) {
-            if (cache.cPersoonMasterIdx !== -1 && info['Contactpersoon'] !== masterRow[cache.cPersoonMasterIdx]) {
-              cache.data[mrIndex][cache.cPersoonMasterIdx] = info['Contactpersoon'];
+          if (cache.bNameMasterIdx !== -1 && extractedBedrijfsnaam) {
+            var bMaster = masterRow[cache.bNameMasterIdx] ? masterRow[cache.bNameMasterIdx].toString().trim() : '';
+            var bSource = extractedBedrijfsnaam.toString().trim();
+            if (bSource.toLowerCase() !== bMaster.toLowerCase()) {
+              cache.data[mrIndex][cache.bNameMasterIdx] = extractedBedrijfsnaam;
               changed = true;
             }
-            if (cache.cBodMasterIdx !== -1 && info['Contactpersoon BOD'] !== masterRow[cache.cBodMasterIdx]) {
-              cache.data[mrIndex][cache.cBodMasterIdx] = info['Contactpersoon BOD'];
-              changed = true;
+          }
+          
+          var info = extractedBedrijfsnaam ? bedrijfInfo[extractedBedrijfsnaam] : null;
+          if (info) {
+            if (cache.cPersoonMasterIdx !== -1) {
+              var cMaster = masterRow[cache.cPersoonMasterIdx] ? masterRow[cache.cPersoonMasterIdx].toString().trim() : '';
+              var cSource = info['Contactpersoon'] ? info['Contactpersoon'].toString().trim() : '';
+              if (cSource.toLowerCase() !== cMaster.toLowerCase()) {
+                cache.data[mrIndex][cache.cPersoonMasterIdx] = info['Contactpersoon'];
+                changed = true;
+              }
+            }
+            if (cache.cBodMasterIdx !== -1) {
+              var bodMaster = masterRow[cache.cBodMasterIdx] ? masterRow[cache.cBodMasterIdx].toString().trim() : '';
+              var bodSource = info['Contactpersoon BOD'] ? info['Contactpersoon BOD'].toString().trim() : '';
+              if (bodSource.toLowerCase() !== bodMaster.toLowerCase()) {
+                cache.data[mrIndex][cache.cBodMasterIdx] = info['Contactpersoon BOD'];
+                changed = true;
+              }
             }
           }
           
@@ -807,6 +840,7 @@ function syncAllToMaster(optSs) {
           cache.data[mrIndex][cache.statusIndex] = 'Verwijderd';
           cache.updatesNeeded = true;
           totalDeletedRows++;
+          filesWithChanges[sourceFileId] = true;
         }
       }
     }
