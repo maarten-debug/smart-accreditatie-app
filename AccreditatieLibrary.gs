@@ -330,6 +330,7 @@ function mailAccreditatieProces(alleenGeselecteerd, optSs, isConcept) {
   var outputKolomSend = config['Output Kolom Send'];
   var outputKolomNaam = config['Output Kolom']; // Bevat de gegenereerde link
   var tabbladenString = config['Tabbladen'];
+  var configOnderwerp = config['Onderwerp'];
   
   if (!formatEmail || !outputKolomSend || !outputKolomNaam || !tabbladenString) {
     if (ui) ui.alert('Fout: Zorg dat Format Email, Output Kolom Send, Output Kolom en Tabbladen zijn ingevuld.');
@@ -437,7 +438,8 @@ function mailAccreditatieProces(alleenGeselecteerd, optSs, isConcept) {
         
       bodyHtml += buttonHtml;
       
-      var subject = 'Accreditatie ' + bNaam;
+      var subject = configOnderwerp ? configOnderwerp : ('Accreditatie ' + bNaam);
+      subject = subject.replace(new RegExp('\\{\\{Bedrijfsnaam\\}\\}', 'gi'), bNaam);
       
       try {
         var mailOptions = {
