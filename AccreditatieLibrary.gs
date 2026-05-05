@@ -584,7 +584,7 @@ function syncAllToMaster(optSs) {
   // GLOBAL CACHE FOR MASTER SHEETS
   var masterCache = {};
   var processedFileIds = {};
-  var validSourceFileIds = {};
+  var filesWithChanges = {};
   
   // 2. Scan Proces: Inlezen en updaten in geheugen
   while (files.hasNext()) {
@@ -707,8 +707,6 @@ function syncAllToMaster(optSs) {
           continue; // Sla deze rij over, het is een lege (of alleen checkbox) rij
         }
         
-        validSourceFileIds[sourceFileId] = true;
-        
         var key = sourceFileId + '_' + sheetName + '_' + (startRow + r);
         
         cache.sourceKeysPresent[key] = true;
@@ -753,6 +751,7 @@ function syncAllToMaster(optSs) {
             }
             cache.updatesNeeded = true;
             totalChangedRows++;
+            filesWithChanges[sourceFileId] = true;
           }
         } else {
           // Nieuwe regel
@@ -788,6 +787,7 @@ function syncAllToMaster(optSs) {
           cache.newColors.push(rowColor);
           
           totalNewRows++;
+          filesWithChanges[sourceFileId] = true;
         }
       }
     }
@@ -827,7 +827,7 @@ function syncAllToMaster(optSs) {
   }
   
   // 4. Update 'Ingevuld' status in het 'Accreditatie' tabblad
-  if (accSheet && outputKolomNaam && Object.keys(validSourceFileIds).length > 0) {
+  if (accSheet && outputKolomNaam && Object.keys(filesWithChanges).length > 0) {
     var accLastRow = accSheet.getLastRow();
     var accLastCol = accSheet.getLastColumn();
     if (accLastRow >= 2 && accLastCol >= 1) {
@@ -868,7 +868,7 @@ function syncAllToMaster(optSs) {
             var fileIdMatch = docUrl.match(/[-\w]{25,}/);
             if (fileIdMatch && fileIdMatch[0]) {
               var fId = fileIdMatch[0];
-              if (validSourceFileIds[fId]) {
+              if (filesWithChanges[fId]) {
                 var currentStatus = rowData[filledColIdx];
                 if (currentStatus !== timestamp) {
                   accData[i][filledColIdx] = timestamp;
