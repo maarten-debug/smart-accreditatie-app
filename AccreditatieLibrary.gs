@@ -552,7 +552,8 @@ function syncAllToMaster(optSs) {
   
   var masterId = config['Master Sheet ID'];
   var folderId = config['Doelmap ID'];
-  var startRow = parseInt(config['Beveilig template tot rij']) || 10;
+  var sourceStartRow = parseInt(config['Beveilig template tot rij']) || 10;
+  var masterStartRow = 2;
   var outputKolomNaam = config['Output Kolom'];
   var outputKolomFilledNaam = config['Output Kolom Filled'] || 'Ingevuld';
   
@@ -614,13 +615,13 @@ function syncAllToMaster(optSs) {
         var m_lastCol = masterSheet.getLastColumn();
         if (m_lastCol === 0) continue;
         
-        var m_headers = masterSheet.getRange(9, 1, 1, m_lastCol).getValues()[0];
+        var m_headers = masterSheet.getRange(1, 1, 1, m_lastCol).getValues()[0];
         
         // Controleer/Voeg SyncKey en SyncStatus kolommen toe in Master
         var syncKeyIndex = m_headers.indexOf('SyncKey');
         if (syncKeyIndex === -1) {
           syncKeyIndex = m_lastCol;
-          masterSheet.getRange(9, syncKeyIndex + 1).setValue('SyncKey');
+          masterSheet.getRange(1, syncKeyIndex + 1).setValue('SyncKey');
           m_headers.push('SyncKey');
           m_lastCol++;
         }
@@ -628,7 +629,7 @@ function syncAllToMaster(optSs) {
         var statusIndex = m_headers.indexOf('SyncStatus');
         if (statusIndex === -1) {
           statusIndex = m_lastCol;
-          masterSheet.getRange(9, statusIndex + 1).setValue('SyncStatus');
+          masterSheet.getRange(1, statusIndex + 1).setValue('SyncStatus');
           m_headers.push('SyncStatus');
           m_lastCol++;
         }
@@ -636,8 +637,8 @@ function syncAllToMaster(optSs) {
         var m_lastRow = masterSheet.getLastRow();
         var m_data = [];
         var m_colors = [];
-        if (m_lastRow >= startRow) {
-          var masterRange = masterSheet.getRange(startRow, 1, m_lastRow - startRow + 1, m_lastCol);
+        if (m_lastRow >= masterStartRow) {
+          var masterRange = masterSheet.getRange(masterStartRow, 1, m_lastRow - masterStartRow + 1, m_lastCol);
           m_data = masterRange.getDisplayValues();
           m_colors = masterRange.getBackgrounds();
         }
@@ -692,9 +693,9 @@ function syncAllToMaster(optSs) {
       if (!hasMapping) continue;
       
       var sourceLastRow = sourceSheet.getLastRow();
-      if (sourceLastRow < startRow) continue;
+      if (sourceLastRow < sourceStartRow) continue;
       
-      var sourceData = sourceSheet.getRange(startRow, 1, sourceLastRow - startRow + 1, sourceLastCol).getDisplayValues();
+      var sourceData = sourceSheet.getRange(sourceStartRow, 1, sourceLastRow - sourceStartRow + 1, sourceLastCol).getDisplayValues();
       var voornaamIdx = sourceHeaders.indexOf('Voornaam');
       var achternaamIdx = sourceHeaders.indexOf('Achternaam');
       
@@ -709,7 +710,7 @@ function syncAllToMaster(optSs) {
           continue; // Sla deze rij over, het is een lege (of alleen checkbox) rij
         }
         
-        var key = sourceFileId + '_' + sheetName + '_' + (startRow + r);
+        var key = sourceFileId + '_' + sheetName + '_' + (sourceStartRow + r);
         
         cache.sourceKeysPresent[key] = true;
         totalProcessedRows++;
@@ -849,13 +850,13 @@ function syncAllToMaster(optSs) {
     
     // Schrijf alle aanpassingen in 1x naar de sheet
     if (cache.updatesNeeded && cache.data.length > 0) {
-      var updateRange = cache.sheet.getRange(startRow, 1, cache.data.length, cache.lastCol);
+      var updateRange = cache.sheet.getRange(masterStartRow, 1, cache.data.length, cache.lastCol);
       updateRange.setValues(cache.data);
       updateRange.setBackgrounds(cache.colors);
     }
     
     if (cache.newRows.length > 0) {
-      var targetStartRow = (cache.lastRow >= startRow) ? (startRow + cache.data.length) : startRow;
+      var targetStartRow = (cache.lastRow >= masterStartRow) ? (masterStartRow + cache.data.length) : masterStartRow;
       var newRange = cache.sheet.getRange(targetStartRow, 1, cache.newRows.length, cache.lastCol);
       newRange.setValues(cache.newRows);
       newRange.setBackgrounds(cache.newColors);
