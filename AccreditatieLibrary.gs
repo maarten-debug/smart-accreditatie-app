@@ -743,17 +743,16 @@ function syncAllToMaster(optSs) {
       
       for (var r = 0; r < sourceData.length; r++) {
         var row = sourceData[r];
+        if (!row) continue; // Bescherming tegen compleet lege rijen van de API
         
-        // Controleer of de rij leeg is in de bron
-        var vNaam = (voornaamIdx !== -1 && row[voornaamIdx]) ? row[voornaamIdx].toString().trim() : '';
-        var aNaam = (achternaamIdx !== -1 && row[achternaamIdx]) ? row[achternaamIdx].toString().trim() : '';
-
+        // Controleer of de rij leeg is in de bron (met bescherming tegen undefined)
+        var vNaam = (voornaamIdx !== -1 && row[voornaamIdx] !== undefined) ? row[voornaamIdx].toString().trim() : '';
+        var aNaam = (achternaamIdx !== -1 && row[achternaamIdx] !== undefined) ? row[achternaamIdx].toString().trim() : '';
         if (vNaam === '' && aNaam === '') {
-          continue; // Sla deze rij over, het is een lege (of alleen checkbox) rij
+          continue;
         }
         
         var key = sourceFileId + '_' + sheetName + '_' + (sourceStartRow + r);
-        
         cache.sourceKeysPresent[key] = true;
         totalProcessedRows++;
         
@@ -765,9 +764,8 @@ function syncAllToMaster(optSs) {
           
           for (var sc in colMap) {
             var mc = colMap[sc];
-            
-            var valSource = row[sc] ? row[sc].toString().trim() : '';
-            var valMaster = masterRow[mc] ? masterRow[mc].toString().trim() : '';
+            var valSource = row[sc] !== undefined ? row[sc].toString().trim() : '';
+            var valMaster = masterRow[mc] !== undefined ? masterRow[mc].toString().trim() : '';
             
             var vS_low = valSource.toLowerCase();
             var vM_low = valMaster.toLowerCase();
@@ -781,19 +779,19 @@ function syncAllToMaster(optSs) {
             // Normaliseer voorloopnullen (getallen)
             if (vS_low !== vM_low && !isNaN(valMaster) && valMaster !== '') {
               if (vS_low.replace(/^0+/, '') === vM_low.replace(/^0+/, '')) {
-                vS_low = vM_low; // Ze zijn wiskundig hetzelfde
+                vS_low = vM_low;
               }
             }
             
             if (vS_low !== vM_low) {
-              cache.data[mrIndex][mc] = row[sc];
+              cache.data[mrIndex][mc] = row[sc] !== undefined ? row[sc] : '';
               changed = true;
             }
           }
           
           // Speciale Kolommen injecteren
           if (cache.bNameMasterIdx !== -1 && extractedBedrijfsnaam) {
-            var bMaster = masterRow[cache.bNameMasterIdx] ? masterRow[cache.bNameMasterIdx].toString().trim() : '';
+            var bMaster = masterRow[cache.bNameMasterIdx] !== undefined ? masterRow[cache.bNameMasterIdx].toString().trim() : '';
             var bSource = extractedBedrijfsnaam.toString().trim();
             if (bSource.toLowerCase() !== bMaster.toLowerCase()) {
               cache.data[mrIndex][cache.bNameMasterIdx] = extractedBedrijfsnaam;
@@ -804,7 +802,7 @@ function syncAllToMaster(optSs) {
           var info = extractedBedrijfsnaam ? bedrijfInfo[extractedBedrijfsnaam] : null;
           if (info) {
             if (cache.cPersoonMasterIdx !== -1) {
-              var cMaster = masterRow[cache.cPersoonMasterIdx] ? masterRow[cache.cPersoonMasterIdx].toString().trim() : '';
+              var cMaster = masterRow[cache.cPersoonMasterIdx] !== undefined ? masterRow[cache.cPersoonMasterIdx].toString().trim() : '';
               var cSource = info['Contactpersoon'] ? info['Contactpersoon'].toString().trim() : '';
               if (cSource.toLowerCase() !== cMaster.toLowerCase()) {
                 cache.data[mrIndex][cache.cPersoonMasterIdx] = info['Contactpersoon'];
@@ -812,7 +810,7 @@ function syncAllToMaster(optSs) {
               }
             }
             if (cache.cBodMasterIdx !== -1) {
-              var bodMaster = masterRow[cache.cBodMasterIdx] ? masterRow[cache.cBodMasterIdx].toString().trim() : '';
+              var bodMaster = masterRow[cache.cBodMasterIdx] !== undefined ? masterRow[cache.cBodMasterIdx].toString().trim() : '';
               var bodSource = info['Contactpersoon BOD'] ? info['Contactpersoon BOD'].toString().trim() : '';
               if (bodSource.toLowerCase() !== bodMaster.toLowerCase()) {
                 cache.data[mrIndex][cache.cBodMasterIdx] = info['Contactpersoon BOD'];
@@ -820,7 +818,7 @@ function syncAllToMaster(optSs) {
               }
             }
             if (cache.bandjeMasterIdx !== -1) {
-              var bandjeMaster = masterRow[cache.bandjeMasterIdx] ? masterRow[cache.bandjeMasterIdx].toString().trim() : '';
+              var bandjeMaster = masterRow[cache.bandjeMasterIdx] !== undefined ? masterRow[cache.bandjeMasterIdx].toString().trim() : '';
               if (bandjeMaster === '') {
                 var bandjeSource = info['Standaard Bandje'] ? info['Standaard Bandje'].toString().trim() : '';
                 if (bandjeSource !== '') {
@@ -830,7 +828,7 @@ function syncAllToMaster(optSs) {
               }
             }
             if (cache.cateringMasterIdx !== -1) {
-              var cateringMaster = masterRow[cache.cateringMasterIdx] ? masterRow[cache.cateringMasterIdx].toString().trim() : '';
+              var cateringMaster = masterRow[cache.cateringMasterIdx] !== undefined ? masterRow[cache.cateringMasterIdx].toString().trim() : '';
               if (cateringMaster === '') {
                 var cateringSource = info['Standaard Catering'] ? info['Standaard Catering'].toString().trim() : '';
                 if (cateringSource !== '') {
@@ -843,7 +841,7 @@ function syncAllToMaster(optSs) {
           
           if (changed) {
             cache.data[mrIndex][cache.statusIndex] = 'Gewijzigd';
-            cache.coloredRows.push(masterStartRow + mrIndex); // Opslaan voor API batchUpdate (1-based rijnummering wordt later 0-based index)
+            cache.coloredRows.push(masterStartRow + mrIndex); 
             cache.updatesNeeded = true;
             totalChangedRows++;
             filesWithChanges[sourceFileId] = true;
@@ -851,11 +849,11 @@ function syncAllToMaster(optSs) {
         } else {
           // Nieuwe regel
           var newMasterRow = new Array(cache.lastCol);
-          for (var i = 0; i < cache.lastCol; i++) newMasterRow[i] = '';
+          for (var i = 0; i < cache.lastCol; i++) newMasterRow[i] = ''; // Garandeer een strakke rechthoek zonder undefined
           
           for (var sc in colMap) {
             var mc = colMap[sc];
-            newMasterRow[mc] = row[sc];
+            newMasterRow[mc] = row[sc] !== undefined ? row[sc] : ''; // Voorkomt de fatale crash bij afgesneden rijen
           }
           
           // Speciale Kolommen injecteren
@@ -882,8 +880,6 @@ function syncAllToMaster(optSs) {
           newMasterRow[cache.statusIndex] = 'Nieuw';
           
           cache.newRows.push(newMasterRow);
-          // Nieuwe rijen worden later tijdens de save-fase in coloredRows gestoken
-          
           totalNewRows++;
           filesWithChanges[sourceFileId] = true;
         }
