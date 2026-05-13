@@ -516,6 +516,10 @@ function syncAllToMaster(optSs) {
   
   var ss = optSs || SpreadsheetApp.getActiveSpreadsheet();
   
+  var scriptProperties = PropertiesService.getScriptProperties();
+  var lastSyncTimeString = scriptProperties.getProperty('lastSyncTime');
+  var lastSyncTime = lastSyncTimeString ? parseInt(lastSyncTimeString, 10) : 0;
+  
   // 1. Lookup Tabel maken
   var bedrijfInfo = {};
   var accSheet = ss.getSheetByName('Accreditatie');
@@ -597,6 +601,12 @@ function syncAllToMaster(optSs) {
   while (files.hasNext()) {
     var file = files.next();
     var sourceFileId = file.getId();
+    
+    var fileLastUpdated = file.getLastUpdated().getTime();
+    if (lastSyncTime > 0 && fileLastUpdated <= lastSyncTime) {
+      continue; // Bestand is niet gewijzigd sinds laatste sync, sla over
+    }
+    
     processedFileIds[sourceFileId] = true;
     
     // Bedrijfsnaam extraheren
@@ -1004,6 +1014,9 @@ function syncAllToMaster(optSs) {
   }
 
   SpreadsheetApp.flush();
+  
+  var currentSyncTime = new Date().getTime();
+  scriptProperties.setProperty('lastSyncTime', currentSyncTime.toString());
   
   if (ui) {
     ui.alert('Synchronisatie voltooid!\n\n' +
