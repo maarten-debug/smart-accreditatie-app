@@ -526,6 +526,8 @@ function syncAllToMaster(optSs) {
       var bNameIdx = accHeaders.indexOf('Bedrijfsnaam');
       var cPersoonIdx = accHeaders.indexOf('Contactpersoon');
       var cBodIdx = accHeaders.indexOf('Contactpersoon BOD');
+      var bandjeIdx = accHeaders.indexOf('Standaard Bandje');
+      var cateringIdx = accHeaders.indexOf('Standaard Catering');
       
       if (bNameIdx !== -1) {
         for (var i = 1; i < accData.length; i++) {
@@ -533,7 +535,9 @@ function syncAllToMaster(optSs) {
           if (bn) {
             bedrijfInfo[bn] = {
               'Contactpersoon': cPersoonIdx !== -1 ? accData[i][cPersoonIdx] : '',
-              'Contactpersoon BOD': cBodIdx !== -1 ? accData[i][cBodIdx] : ''
+              'Contactpersoon BOD': cBodIdx !== -1 ? accData[i][cBodIdx] : '',
+              'Standaard Bandje': bandjeIdx !== -1 ? accData[i][bandjeIdx] : '',
+              'Standaard Catering': cateringIdx !== -1 ? accData[i][cateringIdx] : ''
             };
           }
         }
@@ -664,6 +668,8 @@ function syncAllToMaster(optSs) {
           bNameMasterIdx: m_headers.indexOf('Bedrijfsnaam'),
           cPersoonMasterIdx: m_headers.indexOf('Contactpersoon bedrijf'),
           cBodMasterIdx: m_headers.indexOf('Contactpersoon BOD'),
+          bandjeMasterIdx: m_headers.indexOf('Bandje_Accr'),
+          cateringMasterIdx: m_headers.indexOf('Catering_Accr'),
           newRows: [],
           newColors: [],
           updatesNeeded: false,
@@ -777,6 +783,26 @@ function syncAllToMaster(optSs) {
                 changed = true;
               }
             }
+            if (cache.bandjeMasterIdx !== -1) {
+              var bandjeMaster = masterRow[cache.bandjeMasterIdx] ? masterRow[cache.bandjeMasterIdx].toString().trim() : '';
+              if (bandjeMaster === '') {
+                var bandjeSource = info['Standaard Bandje'] ? info['Standaard Bandje'].toString().trim() : '';
+                if (bandjeSource !== '') {
+                  cache.data[mrIndex][cache.bandjeMasterIdx] = info['Standaard Bandje'];
+                  changed = true;
+                }
+              }
+            }
+            if (cache.cateringMasterIdx !== -1) {
+              var cateringMaster = masterRow[cache.cateringMasterIdx] ? masterRow[cache.cateringMasterIdx].toString().trim() : '';
+              if (cateringMaster === '') {
+                var cateringSource = info['Standaard Catering'] ? info['Standaard Catering'].toString().trim() : '';
+                if (cateringSource !== '') {
+                  cache.data[mrIndex][cache.cateringMasterIdx] = info['Standaard Catering'];
+                  changed = true;
+                }
+              }
+            }
           }
           
           if (changed) {
@@ -810,6 +836,12 @@ function syncAllToMaster(optSs) {
             }
             if (cache.cBodMasterIdx !== -1) {
               newMasterRow[cache.cBodMasterIdx] = info['Contactpersoon BOD'] || '';
+            }
+            if (cache.bandjeMasterIdx !== -1) {
+              newMasterRow[cache.bandjeMasterIdx] = info['Standaard Bandje'] || '';
+            }
+            if (cache.cateringMasterIdx !== -1) {
+              newMasterRow[cache.cateringMasterIdx] = info['Standaard Catering'] || '';
             }
           }
           
