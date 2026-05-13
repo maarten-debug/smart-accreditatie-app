@@ -602,11 +602,6 @@ function syncAllToMaster(optSs) {
     var file = files.next();
     var sourceFileId = file.getId();
     
-    var fileLastUpdated = file.getLastUpdated().getTime();
-    if (lastSyncTime > 0 && fileLastUpdated <= lastSyncTime) {
-      continue; // Bestand is niet gewijzigd sinds laatste sync, sla over
-    }
-    
     processedFileIds[sourceFileId] = true;
     
     // Bedrijfsnaam extraheren
@@ -674,7 +669,6 @@ function syncAllToMaster(optSs) {
           lastRow: m_lastRow,
           headers: m_headers,
           data: m_data,
-          colors: m_colors,
           keyMap: m_keyMap,
           syncKeyIndex: syncKeyIndex,
           statusIndex: statusIndex,
@@ -950,7 +944,7 @@ function syncAllToMaster(optSs) {
   }
   
   // 4. Update 'Ingevuld' status in het 'Accreditatie' tabblad
-  if (accSheet && outputKolomNaam && Object.keys(filesWithChanges).length > 0) {
+  if (accSheet && outputKolomNaam && Object.keys(processedFileIds).length > 0) {
     var accLastRow = accSheet.getLastRow();
     var accLastCol = accSheet.getLastColumn();
     if (accLastRow >= 2 && accLastCol >= 1) {
@@ -991,7 +985,7 @@ function syncAllToMaster(optSs) {
             var fileIdMatch = docUrl.match(/[-\w]{25,}/);
             if (fileIdMatch && fileIdMatch[0]) {
               var fId = fileIdMatch[0];
-              if (filesWithChanges[fId]) {
+              if (processedFileIds[fId]) {
                 var currentStatus = rowData[filledColIdx];
                 if (currentStatus !== timestamp) {
                   accData[i][filledColIdx] = timestamp;
@@ -1042,23 +1036,28 @@ function syncAllToMaster(optSs) {
 
 /**
  * Wrapper functie voor automatische triggers (bijv. elk kwartier).
- * Controleert eerst of de huidige datum op of tussen de ingestelde start- en einddatum valt.
+ * Negeert de datum-check als we handmatig (force) op de knop drukken.
  */
-function syncMetDatumCheck(optSs) {
+function syncMetDatumCheck(optSs, force) {
   var ss = optSs || SpreadsheetApp.getActiveSpreadsheet();
-  var configObj = getConfiguratie(ss);
   
+  if (force) {
+    Logger.log("Handmatige sync: datum-check overgeslagen.");
+    syncAllToMaster(ss);
+    return;
+  }
+  
+  var configObj = getConfiguratie(ss);
   if (!configObj) {
     Logger.log("Configuratie tabblad niet gevonden.");
     return;
   }
-  
   var config = configObj.config;
   var startDatumStr = config['Sync Startdatum'];
   var eindDatumStr = config['Sync Einddatum'];
   
   if (!startDatumStr || !eindDatumStr) {
-    Logger.log("Geen geldige start- of einddatum gevonden. Sync wordt overgeslagen of gebruik handmatige sync.");
+    Logger.log("Geen geldige start- of einddatum gevonden.");
     return;
   }
   
@@ -1066,16 +1065,14 @@ function syncMetDatumCheck(optSs) {
   var eindDatum = new Date(eindDatumStr);
   var vandaag = new Date();
   
-  // Verwijder tijd-component voor zuivere datum-vergelijking
   vandaag.setHours(0, 0, 0, 0);
   startDatum.setHours(0, 0, 0, 0);
   eindDatum.setHours(0, 0, 0, 0);
   
   if (vandaag >= startDatum && vandaag <= eindDatum) {
-    Logger.log("Datum binnen sync-periode. Sync wordt gestart.");
     syncAllToMaster(ss);
   } else {
-    Logger.log("Buiten sync-periode (" + startDatumStr + " tot " + eindDatumStr + "). Sync geannuleerd.");
+    Logger.log("Buiten sync-periode. Sync geannuleerd.");
     return;
   }
 }
