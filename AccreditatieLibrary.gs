@@ -521,8 +521,16 @@ function syncAllToMaster(optSs) {
   var lastSyncTime = lastSyncTimeString ? parseInt(lastSyncTimeString, 10) : 0;
   
   // 1. Lookup Tabel maken
+  var configObj = getConfiguratie(ss);
+  if (!configObj) {
+    if (ui) ui.alert('Fout: Tabblad "Configuratie" niet gevonden.');
+    return;
+  }
+  var config = configObj.config;
+
   var bedrijfInfo = {};
-  var accSheet = ss.getSheetByName('Accreditatie');
+  var tabnaam = config['Tabbladen'] ? config['Tabbladen'].split(',')[0].trim() : 'Accreditatie';
+  var accSheet = ss.getSheetByName(tabnaam);
   if (accSheet) {
     var accData = accSheet.getDataRange().getValues();
     if (accData.length > 0) {
@@ -532,10 +540,16 @@ function syncAllToMaster(optSs) {
       var cBodIdx = accHeaders.indexOf('Contactpersoon BOD');
       var bandjeIdx = accHeaders.indexOf('Standaard Bandje');
       var cateringIdx = accHeaders.indexOf('Standaard Catering');
+      var linkColIdx = accHeaders.indexOf(config['Output Kolom'] || 'Accreditatie');
+      if (linkColIdx === -1) linkColIdx = accHeaders.indexOf('Accreditatie');
       
       if (bNameIdx !== -1) {
         for (var i = 1; i < accData.length; i++) {
           var bn = accData[i][bNameIdx] ? accData[i][bNameIdx].toString().trim() : '';
+          var cellValue = linkColIdx !== -1 ? accData[i][linkColIdx] : '';
+          var fileIdMatch = cellValue.toString().match(/[-\w]{25,}/);
+          var fId = fileIdMatch ? fileIdMatch[0] : null;
+
           if (bn) {
             bedrijfInfo[bn] = {
               'Contactpersoon': cPersoonIdx !== -1 ? accData[i][cPersoonIdx] : '',
@@ -543,20 +557,14 @@ function syncAllToMaster(optSs) {
               'Standaard Bandje': bandjeIdx !== -1 ? accData[i][bandjeIdx] : '',
               'Standaard Catering': cateringIdx !== -1 ? accData[i][cateringIdx] : ''
             };
+            if (fId) {
+              bedrijfInfo[fId] = bedrijfInfo[bn];
+            }
           }
         }
       }
     }
   }
-
-  var configObj = getConfiguratie(ss);
-  
-  if (!configObj) {
-    if (ui) ui.alert('Fout: Tabblad "Configuratie" niet gevonden.');
-    return;
-  }
-  
-  var config = configObj.config;
   
   var masterId = config['Master Sheet ID'];
   var folderId = config['Doelmap ID'];
@@ -692,13 +700,29 @@ function syncAllToMaster(optSs) {
         continue;
       }
       var allValues = sourceDataResponse.values;
-      if (!allValues || allValues.length < 9) continue; // Headers staan op rij 9 (index 8)
+      if (!allValues || allValues.length === 0) continue;
       
-      var sourceHeaders = allValues[8];
-      var sourceLastCol = sourceHeaders.length;
-      if (sourceLastCol === 0) continue;
+      // Zoek dynamisch de header-rij door te matchen met master headers (toekomstbestendig)
+      var headerRowIndex = -1;
+      var maxMatches = 0;
+      for (var i = 0; i < allValues.length; i++) {
+        var row = allValues[i];
+        var matches = 0;
+        if (row) {
+          for (var c = 0; c < row.length; c++) {
+            if (row[c] && cache.headers.indexOf(row[c]) !== -1) matches++;
+          }
+        }
+        if (matches > maxMatches) {
+          maxMatches = matches;
+          headerRowIndex = i;
+        }
+      }
       
-      var colMap = {}; // source col index -> master col index
+      if (headerRowIndex === -1 || maxMatches < 2) continue;
+      
+      var sourceHeaders = allValues[headerRowIndex];
+      var colMap = {};
       var hasMapping = false;
       for (var sc = 0; sc < sourceHeaders.length; sc++) {
         var sh = sourceHeaders[sc];
@@ -712,10 +736,8 @@ function syncAllToMaster(optSs) {
       }
       
       if (!hasMapping) continue;
-      
-      if (allValues.length < sourceStartRow) continue;
-      
-      var sourceData = allValues.slice(sourceStartRow - 1);
+      // Data begint direct onder de gevonden header
+      var sourceData = allValues.slice(headerRowIndex + 1);
       var voornaamIdx = sourceHeaders.indexOf('Voornaam');
       var achternaamIdx = sourceHeaders.indexOf('Achternaam');
       
@@ -944,7 +966,7 @@ function syncAllToMaster(optSs) {
   }
   
   // 4. Update 'Ingevuld' status in het 'Accreditatie' tabblad
-  if (accSheet && outputKolomNaam && Object.keys(processedFileIds).length > 0) {
+  if (accSheet && outputKolomNaam && Object.keys(filesWithChanges).length > 0) {
     var accLastRow = accSheet.getLastRow();
     var accLastCol = accSheet.getLastColumn();
     if (accLastRow >= 2 && accLastCol >= 1) {
@@ -985,7 +1007,7 @@ function syncAllToMaster(optSs) {
             var fileIdMatch = docUrl.match(/[-\w]{25,}/);
             if (fileIdMatch && fileIdMatch[0]) {
               var fId = fileIdMatch[0];
-              if (processedFileIds[fId]) {
+              if (filesWithChanges[fId]) {
                 var currentStatus = rowData[filledColIdx];
                 if (currentStatus !== timestamp) {
                   accData[i][filledColIdx] = timestamp;
