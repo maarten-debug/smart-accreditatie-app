@@ -1018,11 +1018,64 @@ function syncAllToMaster(optSs) {
   var currentSyncTime = new Date().getTime();
   scriptProperties.setProperty('lastSyncTime', currentSyncTime.toString());
   
+  // Update "Laatste Sync" in de 'Configuratie' sheet
+  if (configObj && configObj.sheet) {
+    var cSheet = configObj.sheet;
+    var cData = cSheet.getDataRange().getValues();
+    for (var r = 0; r < cData.length; r++) {
+      if (cData[r][0] && cData[r][0].toString().trim() === "Laatste Sync") {
+        var formattedTime = Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), "dd-MM-yyyy HH:mm");
+        cSheet.getRange(r + 1, 2).setValue(formattedTime);
+        break;
+      }
+    }
+  }
+  
   if (ui) {
     ui.alert('Synchronisatie voltooid!\n\n' +
       'Rijen verwerkt: ' + totalProcessedRows + '\n' +
       'Nieuw: ' + totalNewRows + '\n' +
       'Gewijzigd: ' + totalChangedRows + '\n' +
       'Verwijderd: ' + totalDeletedRows);
+  }
+}
+
+/**
+ * Wrapper functie voor automatische triggers (bijv. elk kwartier).
+ * Controleert eerst of de huidige datum op of tussen de ingestelde start- en einddatum valt.
+ */
+function syncMetDatumCheck(optSs) {
+  var ss = optSs || SpreadsheetApp.getActiveSpreadsheet();
+  var configObj = getConfiguratie(ss);
+  
+  if (!configObj) {
+    Logger.log("Configuratie tabblad niet gevonden.");
+    return;
+  }
+  
+  var config = configObj.config;
+  var startDatumStr = config['Sync Startdatum'];
+  var eindDatumStr = config['Sync Einddatum'];
+  
+  if (!startDatumStr || !eindDatumStr) {
+    Logger.log("Geen geldige start- of einddatum gevonden. Sync wordt overgeslagen of gebruik handmatige sync.");
+    return;
+  }
+  
+  var startDatum = new Date(startDatumStr);
+  var eindDatum = new Date(eindDatumStr);
+  var vandaag = new Date();
+  
+  // Verwijder tijd-component voor zuivere datum-vergelijking
+  vandaag.setHours(0, 0, 0, 0);
+  startDatum.setHours(0, 0, 0, 0);
+  eindDatum.setHours(0, 0, 0, 0);
+  
+  if (vandaag >= startDatum && vandaag <= eindDatum) {
+    Logger.log("Datum binnen sync-periode. Sync wordt gestart.");
+    syncAllToMaster(ss);
+  } else {
+    Logger.log("Buiten sync-periode (" + startDatumStr + " tot " + eindDatumStr + "). Sync geannuleerd.");
+    return;
   }
 }
