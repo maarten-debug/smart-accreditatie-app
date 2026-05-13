@@ -604,12 +604,17 @@ function syncAllToMaster(optSs) {
     var nameParts = fileName.split(' - ');
     var extractedBedrijfsnaam = nameParts.length > 1 ? nameParts[1].trim() : '';
     
-    var sourceSs = SpreadsheetApp.openById(sourceFileId);
-    var sourceSheets = sourceSs.getSheets();
+    var spreadsheet;
+    try {
+      spreadsheet = Sheets.Spreadsheets.get(sourceFileId);
+    } catch (e) {
+      Logger.log("Kan file " + sourceFileId + " niet ophalen via API.");
+      continue;
+    }
+    var sourceSheets = spreadsheet.sheets || [];
     
     for (var s = 0; s < sourceSheets.length; s++) {
-      var sourceSheet = sourceSheets[s];
-      var sheetName = sourceSheet.getName();
+      var sheetName = sourceSheets[s].properties.title;
       
       var masterSheet = masterSs.getSheetByName(sheetName);
       if (!masterSheet) continue; // Match op exacte tabblad naam
@@ -640,11 +645,9 @@ function syncAllToMaster(optSs) {
         
         var m_lastRow = masterSheet.getLastRow();
         var m_data = [];
-        var m_colors = [];
         if (m_lastRow >= masterStartRow) {
           var masterRange = masterSheet.getRange(masterStartRow, 1, m_lastRow - masterStartRow + 1, m_lastCol);
           m_data = masterRange.getDisplayValues();
-          m_colors = masterRange.getBackgrounds();
         }
         
         var m_keyMap = {};
@@ -671,17 +674,25 @@ function syncAllToMaster(optSs) {
           bandjeMasterIdx: m_headers.indexOf('Bandje_Accr'),
           cateringMasterIdx: m_headers.indexOf('Catering_Accr'),
           newRows: [],
-          newColors: [],
+          coloredRows: [],
           updatesNeeded: false,
           sourceKeysPresent: {}
         };
       }
       
       var cache = masterCache[sheetName];
-      var sourceLastCol = sourceSheet.getLastColumn();
-      if (sourceLastCol === 0) continue;
+      var sourceDataResponse;
+      try {
+        sourceDataResponse = Sheets.Spreadsheets.Values.get(sourceFileId, "'" + sheetName + "'");
+      } catch (e) {
+        continue;
+      }
+      var allValues = sourceDataResponse.values;
+      if (!allValues || allValues.length < 9) continue; // Headers staan op rij 9 (index 8)
       
-      var sourceHeaders = sourceSheet.getRange(9, 1, 1, sourceLastCol).getValues()[0];
+      var sourceHeaders = allValues[8];
+      var sourceLastCol = sourceHeaders.length;
+      if (sourceLastCol === 0) continue;
       
       var colMap = {}; // source col index -> master col index
       var hasMapping = false;
@@ -698,10 +709,9 @@ function syncAllToMaster(optSs) {
       
       if (!hasMapping) continue;
       
-      var sourceLastRow = sourceSheet.getLastRow();
-      if (sourceLastRow < sourceStartRow) continue;
+      if (allValues.length < sourceStartRow) continue;
       
-      var sourceData = sourceSheet.getRange(sourceStartRow, 1, sourceLastRow - sourceStartRow + 1, sourceLastCol).getDisplayValues();
+      var sourceData = allValues.slice(sourceStartRow - 1);
       var voornaamIdx = sourceHeaders.indexOf('Voornaam');
       var achternaamIdx = sourceHeaders.indexOf('Achternaam');
       
@@ -807,10 +817,7 @@ function syncAllToMaster(optSs) {
           
           if (changed) {
             cache.data[mrIndex][cache.statusIndex] = 'Gewijzigd';
-            // Kleur rij lichtoranje
-            for (var c = 0; c < cache.lastCol; c++) {
-              cache.colors[mrIndex][c] = '#FFE5B4';
-            }
+            cache.coloredRows.push(masterStartRow + mrIndex); // Opslaan voor API batchUpdate (1-based rijnummering wordt later 0-based index)
             cache.updatesNeeded = true;
             totalChangedRows++;
             filesWithChanges[sourceFileId] = true;
@@ -849,10 +856,7 @@ function syncAllToMaster(optSs) {
           newMasterRow[cache.statusIndex] = 'Nieuw';
           
           cache.newRows.push(newMasterRow);
-          
-          var rowColor = new Array(cache.lastCol);
-          for (var i = 0; i < cache.lastCol; i++) rowColor[i] = null;
-          cache.newColors.push(rowColor);
+          // Nieuwe rijen worden later tijdens de save-fase in coloredRows gestoken
           
           totalNewRows++;
           filesWithChanges[sourceFileId] = true;
@@ -862,6 +866,8 @@ function syncAllToMaster(optSs) {
   }
   
   // 3. Batch Updates uitvoeren
+  var batchUpdateRequests = [];
+  
   for (var sheetName in masterCache) {
     var cache = masterCache[sheetName];
     
@@ -884,15 +890,53 @@ function syncAllToMaster(optSs) {
     if (cache.updatesNeeded && cache.data.length > 0) {
       var updateRange = cache.sheet.getRange(masterStartRow, 1, cache.data.length, cache.lastCol);
       updateRange.setValues(cache.data);
-      updateRange.setBackgrounds(cache.colors);
     }
     
     if (cache.newRows.length > 0) {
       var targetStartRow = (cache.lastRow >= masterStartRow) ? (masterStartRow + cache.data.length) : masterStartRow;
       var newRange = cache.sheet.getRange(targetStartRow, 1, cache.newRows.length, cache.lastCol);
       newRange.setValues(cache.newRows);
-      newRange.setBackgrounds(cache.newColors);
+      
+      // Bereken de index voor de nieuwe rijen en sla op voor kleuring
+      for (var i = 0; i < cache.newRows.length; i++) {
+        cache.coloredRows.push(targetStartRow + i);
+      }
     }
+    
+    // Bouw de batchUpdate API payload op voor deze specifieke tabblad
+    if (cache.coloredRows.length > 0) {
+      var sheetId = cache.sheet.getSheetId();
+      for (var i = 0; i < cache.coloredRows.length; i++) {
+        var rIdx = cache.coloredRows[i] - 1; // Advanced Sheets API is 0-based
+        batchUpdateRequests.push({
+          repeatCell: {
+            range: {
+              sheetId: sheetId,
+              startRowIndex: rIdx,
+              endRowIndex: rIdx + 1,
+              startColumnIndex: 0,
+              endColumnIndex: cache.lastCol
+            },
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: {
+                  red: 1.0,
+                  green: 0.898,
+                  blue: 0.706
+                }
+              }
+            },
+            fields: "userEnteredFormat.backgroundColor"
+          }
+        });
+      }
+    }
+  }
+  
+  if (batchUpdateRequests.length > 0) {
+    Sheets.Spreadsheets.batchUpdate({
+      requests: batchUpdateRequests
+    }, masterId);
   }
   
   // 4. Update 'Ingevuld' status in het 'Accreditatie' tabblad
